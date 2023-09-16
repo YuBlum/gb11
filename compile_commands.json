@@ -1,0 +1,20 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-c",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-ansi",
+      "-pedantic",
+      "-DLINUX",
+      "-o",
+      "build/gb11_linux",
+      "main.c"
+    ],
+    "directory": "/home/blum/dev/gb11",
+    "file": "/home/blum/dev/gb11/main.c",
+    "output": "/home/blum/dev/gb11/build/gb11_linux"
+  }
+]
