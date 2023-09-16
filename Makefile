@@ -1,6 +1,6 @@
 bin=gb11
 flags=-Wall -Wextra -Werror -ansi -pedantic
-libs=-lglfw -lGL -lm
+libs=-lglfw -lm
 target=linux
 
 ifeq ($(target), linux)
