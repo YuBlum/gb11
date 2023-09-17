@@ -18,10 +18,13 @@ typedef u8                  input;
 #define MEM_AMOUNT 1024*8
 #define GAME_W  160
 #define GAME_H  144
+#define GAME_TW (GAME_W >> 3)
+#define GAME_TH (GAME_H >> 3)
 #define GAME_S  4
 #define WINDOW_W (GAME_W * GAME_S)
 #define WINDOW_H (GAME_H * GAME_S)
 #define WINDOW_TITLE "GB11"
+#define TILE_SIZE  8
 #define WHITE      0
 #define LIGHT_GREY 1
 #define DARK_GREY  2
@@ -44,6 +47,11 @@ typedef struct {
   f32 x, y;
 } v2;
 
+typedef struct {
+  v2 pos;
+  v2 siz;
+} rect;
+
 enum {
   K_UP     = 1 << 0,
   K_LEFT   = 1 << 1,
@@ -54,6 +62,13 @@ enum {
   K_START  = 1 << 6,
   K_SELECT = 1 << 7
 };
+
+typedef enum {
+  D_UP = 0,
+  D_LEFT,
+  D_RIGHT,
+  D_DOWN
+} direction;
 
 /* opengl function types */
 typedef void    gl_clear_fn(GLbitfield mask);
@@ -175,6 +190,22 @@ make_shader(GLenum type, const s8 *src) {
   return output;
 }
 
+static b8
+rect_collide(rect r1, rect r2) {
+  return r1.pos.x + r1.siz.x > r2.pos.x &&
+         r1.pos.x < r2.pos.x + r2.siz.x &&
+         r1.pos.y + r1.siz.y > r2.pos.y &&
+         r1.pos.y < r2.pos.y + r2.siz.y;
+}
+
+static void
+update_level_rect(rect *level) {
+  level->pos.x += TILE_SIZE;
+  level->pos.y += TILE_SIZE;
+  level->siz.x -= TILE_SIZE * 2;
+  level->siz.y -= TILE_SIZE * 2;
+}
+
 /* callbacks */
 static void
 key_callback(GLFWwindow *window, s32 key, s32 scancode, s32 action, s32 mods) {
@@ -182,25 +213,25 @@ key_callback(GLFWwindow *window, s32 key, s32 scancode, s32 action, s32 mods) {
   if (action == GLFW_REPEAT) return;
   if (action == GLFW_PRESS) {
     switch (key) {
-      case GLFW_KEY_UP:    input_set(key_cur, K_UP);     break;
-      case GLFW_KEY_LEFT:  input_set(key_cur, K_LEFT);   break;
-      case GLFW_KEY_RIGHT: input_set(key_cur, K_RIGHT);  break;
-      case GLFW_KEY_DOWN:  input_set(key_cur, K_DOWN);   break;
-      case GLFW_KEY_Z:     input_set(key_cur, K_A);      break;
-      case GLFW_KEY_X:     input_set(key_cur, K_B);      break;
-      case GLFW_KEY_A:     input_set(key_cur, K_START);  break;
-      case GLFW_KEY_S:     input_set(key_cur, K_SELECT); break;
+      case GLFW_KEY_W: input_set(key_cur, K_UP);     break;
+      case GLFW_KEY_A: input_set(key_cur, K_LEFT);   break;
+      case GLFW_KEY_D: input_set(key_cur, K_RIGHT);  break;
+      case GLFW_KEY_S: input_set(key_cur, K_DOWN);   break;
+      case GLFW_KEY_J: input_set(key_cur, K_A);      break;
+      case GLFW_KEY_K: input_set(key_cur, K_B);      break;
+      case GLFW_KEY_U: input_set(key_cur, K_START);  break;
+      case GLFW_KEY_I: input_set(key_cur, K_SELECT); break;
     }
   } else {
     switch (key) {
-      case GLFW_KEY_UP:    input_clr(key_cur, K_UP);     break;
-      case GLFW_KEY_LEFT:  input_clr(key_cur, K_LEFT);   break;
-      case GLFW_KEY_RIGHT: input_clr(key_cur, K_RIGHT);  break;
-      case GLFW_KEY_DOWN:  input_clr(key_cur, K_DOWN);   break;
-      case GLFW_KEY_Z:     input_clr(key_cur, K_A);      break;
-      case GLFW_KEY_X:     input_clr(key_cur, K_B);      break;
-      case GLFW_KEY_A:     input_clr(key_cur, K_START);  break;
-      case GLFW_KEY_S:     input_clr(key_cur, K_SELECT); break;
+      case GLFW_KEY_W: input_clr(key_cur, K_UP);     break;
+      case GLFW_KEY_A: input_clr(key_cur, K_LEFT);   break;
+      case GLFW_KEY_D: input_clr(key_cur, K_RIGHT);  break;
+      case GLFW_KEY_S: input_clr(key_cur, K_DOWN);   break;
+      case GLFW_KEY_J: input_clr(key_cur, K_A);      break;
+      case GLFW_KEY_K: input_clr(key_cur, K_B);      break;
+      case GLFW_KEY_U: input_clr(key_cur, K_START);  break;
+      case GLFW_KEY_I: input_clr(key_cur, K_SELECT); break;
     }
   }
 }
@@ -215,7 +246,7 @@ clear_screen(u8 color_index) {
 }
 
 static void
-draw_rect(v2 pos, u32 w, u32 h, u8 color_index) {
+draw_rect_v2(v2 pos, u32 w, u32 h, u8 color_index) {
   s32 x_min, x_max;
   s32 y_min, y_max;
   s32 x, y;
@@ -227,14 +258,117 @@ draw_rect(v2 pos, u32 w, u32 h, u8 color_index) {
       y_max < 0 || y_min > GAME_H - 1) return;
   for (y = y_min; y < y_max; y++) {
     if (y < 0) continue;
-    if (y > GAME_H) break;
+    if (y > GAME_H - 1) break;
     for (x = x_min; x < x_max; x++) {
       if (x < 0) continue;
-      if (x > GAME_W) break;
+      if (x > GAME_W - 1) break;
       screen[y * GAME_W + x] = palette[color_index];
     }
   }
 }
+
+static void
+draw_rect(rect rect, u8 color_index) {
+  draw_rect_v2(rect.pos, rect.siz.x, rect.siz.y, color_index);
+}
+
+/* gameplay stuff */
+static rect player;
+static v2 player_nxt_pos;
+static b8 player_walking;
+static b8 player_dead;
+static direction player_dir;
+static rect level;
+
+static void
+init(void) {
+  player.pos.x = (GAME_TW >> 1) * TILE_SIZE;
+  player.pos.y = (GAME_TH >> 1) * TILE_SIZE;
+  player.siz.x = player.siz.y = TILE_SIZE;
+  player_nxt_pos = player.pos;
+  player_walking = 0;
+  player_dead = 0;
+  player_dir = D_RIGHT;
+  level.pos.x = level.pos.y = 0;
+  level.siz.x = GAME_W;
+  level.siz.y = GAME_H;
+}
+
+static void
+update(f32 dt) {
+  if (!player_dead) {
+    if (!player_walking) {
+      if (key_click(K_UP)) {
+        player_nxt_pos.y -= TILE_SIZE;
+        player_dir = D_UP;
+        player_walking = 1;
+      }
+      if (key_click(K_LEFT)) {
+        player_nxt_pos.x -= TILE_SIZE;
+        player_dir = D_LEFT;
+        player_walking = 1;
+      }
+      if (key_click(K_RIGHT)) {
+        player_nxt_pos.x += TILE_SIZE;
+        player_dir = D_RIGHT;
+        player_walking = 1;
+      }
+      if (key_click(K_DOWN)) {
+        player_nxt_pos.y += TILE_SIZE;
+        player_dir = D_DOWN;
+        player_walking = 1;
+      }
+    } else {
+      switch (player_dir) {
+        case D_UP:
+          player.pos.y -= 50 * dt;
+          if (player.pos.y < player_nxt_pos.y) {
+            player.pos.y = player_nxt_pos.y;
+            player_walking = 0;
+            update_level_rect(&level);
+            player_dead = !rect_collide(player, level);
+          }
+          break;
+        case D_LEFT:
+          player.pos.x -= 50 * dt;
+          if (player.pos.x < player_nxt_pos.x) {
+            player.pos.x = player_nxt_pos.x;
+            player_walking = 0;
+            update_level_rect(&level);
+            player_dead = !rect_collide(player, level);
+          }
+          break;
+        case D_RIGHT:
+          player.pos.x += 50 * dt;
+          if (player.pos.x > player_nxt_pos.x) {
+            player.pos.x = player_nxt_pos.x;
+            player_walking = 0;
+            update_level_rect(&level);
+            player_dead = !rect_collide(player, level);
+          }
+          break;
+        case D_DOWN:
+          player.pos.y += 50 * dt;
+          if (player.pos.y > player_nxt_pos.y) {
+            player.pos.y = player_nxt_pos.y;
+            player_walking = 0;
+            update_level_rect(&level);
+            player_dead = !rect_collide(player, level);
+          }
+          break;
+      }
+    }
+  } else if (key_click(K_B)) {
+    init();
+  }
+}
+
+static void
+draw(void) {
+  draw_rect(level, DARK_GREY);
+  draw_rect(player, player_dead ? DARK_GREY : LIGHT_GREY);
+}
+
 
 /* entry point */
 s32
@@ -361,25 +495,17 @@ main(void) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, GAME_W, GAME_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, screen);
 
   {
-    /* game variables */
-    v2 player_pos = { 6, 5 };
-    v2 level_pos = { 2, 2 };
-    u32 level_w = GAME_W - 4, level_h = GAME_H - 4;
-    f32 dt = 0;
     f32 prv_time = glfwGetTime();
+    init();
     while (!glfwWindowShouldClose(window)) {
       /* timing */
-      dt = glfwGetTime() - prv_time;
+      f32 dt = glfwGetTime() - prv_time;
       prv_time = glfwGetTime();
       /* logic */
-      if (key_press(K_RIGHT)) player_pos.x += 50 * dt;
-      if (key_press(K_LEFT))  player_pos.x -= 50 * dt;
-      if (key_press(K_UP))    player_pos.y -= 50 * dt;
-      if (key_press(K_DOWN))  player_pos.y += 50 * dt;
+      update(dt);
       /* rendering */
       clear_screen(BLACK);
-      draw_rect(level_pos, level_w, level_h, DARK_GREY);
-      draw_rect(player_pos, 10, 10, LIGHT_GREY);
+      draw();
       /* internal rendering/input */
       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, GAME_W, GAME_H, GL_RGBA, GL_UNSIGNED_BYTE, screen);
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
