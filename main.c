@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
 
+
 /* typedefs */
 typedef char                b8;
 typedef char                s8;
@@ -14,6 +15,8 @@ typedef float               f32;
 typedef u32                 rgb;
 typedef u8                  input;
 
+#include "./atlas.h"
+
 /* defines */
 #define MEM_AMOUNT 1024*8
 #define GAME_W  160
@@ -25,10 +28,11 @@ typedef u8                  input;
 #define WINDOW_H (GAME_H * GAME_S)
 #define WINDOW_TITLE "GB11"
 #define TILE_SIZE  8
-#define WHITE      0
-#define LIGHT_GREY 1
-#define DARK_GREY  2
-#define BLACK      3
+#define WHITE       0
+#define LIGHT_GREY  1
+#define DARK_GREY   2
+#define BLACK       3
+#define TRANSPARENT 4
 
 /* exit codes */
 #define EXIT_GLFW     1
@@ -272,6 +276,37 @@ draw_rect(rect rect, u8 color_index) {
   draw_rect_v2(rect.pos, rect.siz.x, rect.siz.y, color_index);
 }
 
+static void
+draw_tile(v2 pos, u32 tile_x, u32 tile_y) {
+  u32 tx, ty;
+  s32 px = pos.x, py = pos.y;
+  if (px + TILE_SIZE < 0 || px > GAME_W - 1 ||
+      py + TILE_SIZE < 0 || py > GAME_H - 1) return;
+  for (tx = 0; tx < ATLAS_H / TILE_SIZE; tx++) {
+    for (ty = 0; ty < ATLAS_W / TILE_SIZE; ty++) {
+      if (tx == tile_x && ty == tile_y) {
+        u32 ox, oy;
+        for (oy = 0; oy < TILE_SIZE; oy++) {
+          py = pos.y + oy;
+          if (py < 0) continue;
+          if (py > GAME_H - 1) break;
+          for (ox = 0; ox < TILE_SIZE; ox++) {
+            u32 x, y;
+            u8 color_index;
+            px = pos.x + ox;
+            if (px < 0) continue;
+            if (px > GAME_W - 1) break;
+            x = tx * TILE_SIZE + ox;
+            y = ty * TILE_SIZE + oy;
+            color_index = atlas[y * ATLAS_W + x];
+            if (color_index < TRANSPARENT) screen[py * GAME_W + px] = palette[color_index];
+          }
+        }
+      }
+    }
+  }
+}
+
 /* gameplay stuff */
 static rect player;
 static v2 player_nxt_pos;
@@ -279,6 +314,8 @@ static b8 player_walking;
 static b8 player_dead;
 static direction player_dir;
 static rect level;
+
+#define PLAYER_SPEED 50
 
 static void
 init(void) {
@@ -321,7 +358,7 @@ update(f32 dt) {
     } else {
       switch (player_dir) {
         case D_UP:
-          player.pos.y -= 50 * dt;
+          player.pos.y -= PLAYER_SPEED * dt;
           if (player.pos.y < player_nxt_pos.y) {
             player.pos.y = player_nxt_pos.y;
             player_walking = 0;
@@ -330,7 +367,7 @@ update(f32 dt) {
           }
           break;
         case D_LEFT:
-          player.pos.x -= 50 * dt;
+          player.pos.x -= PLAYER_SPEED * dt;
           if (player.pos.x < player_nxt_pos.x) {
             player.pos.x = player_nxt_pos.x;
             player_walking = 0;
@@ -339,7 +376,7 @@ update(f32 dt) {
           }
           break;
         case D_RIGHT:
-          player.pos.x += 50 * dt;
+          player.pos.x += PLAYER_SPEED * dt;
           if (player.pos.x > player_nxt_pos.x) {
             player.pos.x = player_nxt_pos.x;
             player_walking = 0;
@@ -348,7 +385,7 @@ update(f32 dt) {
           }
           break;
         case D_DOWN:
-          player.pos.y += 50 * dt;
+          player.pos.y += PLAYER_SPEED * dt;
           if (player.pos.y > player_nxt_pos.y) {
             player.pos.y = player_nxt_pos.y;
             player_walking = 0;
@@ -366,7 +403,8 @@ update(f32 dt) {
 static void
 draw(void) {
   draw_rect(level, DARK_GREY);
-  draw_rect(player, player_dead ? DARK_GREY : LIGHT_GREY);
+  /*draw_rect(player, player_dead ? DARK_GREY : LIGHT_GREY);*/
+  draw_tile(player.pos, 0, 0);
 }
 
 

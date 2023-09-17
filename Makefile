@@ -19,6 +19,7 @@ out=build/$(bin)_$(target)
 
 all:
 	$(cc) $(flags) -o $(out) $(libs) $(defs) main.c
+	cp -rf ./res/* ./build/
 
 clean:
 	rm -rf ./build/*
