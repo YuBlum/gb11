@@ -12,6 +12,7 @@ typedef unsigned short      u16;
 typedef unsigned int        u32;
 typedef float               f32;
 typedef u32                 rgb;
+typedef u8                  input;
 
 /* defines */
 #define MEM_AMOUNT 1024*8
@@ -21,6 +22,10 @@ typedef u32                 rgb;
 #define WINDOW_W (GAME_W * GAME_S)
 #define WINDOW_H (GAME_H * GAME_S)
 #define WINDOW_TITLE "GB11"
+#define WHITE      0
+#define LIGHT_GREY 1
+#define DARK_GREY  2
+#define BLACK      3
 
 /* exit codes */
 #define EXIT_GLFW     1
@@ -34,6 +39,21 @@ typedef struct {
   u32 shader;
   b8 failed;
 } shader_output;
+
+typedef struct {
+  f32 x, y;
+} v2;
+
+enum {
+  K_UP     = 1 << 0,
+  K_LEFT   = 1 << 1,
+  K_RIGHT  = 1 << 2,
+  K_DOWN   = 1 << 3,
+  K_A      = 1 << 4,
+  K_B      = 1 << 5,
+  K_START  = 1 << 6,
+  K_SELECT = 1 << 7
+};
 
 /* opengl function types */
 typedef void    gl_clear_fn(GLbitfield mask);
@@ -103,6 +123,17 @@ static gl_tex_sub_image_2d               *_glTexSubImage2D;
 static u8 game_memory[MEM_AMOUNT]; /* basically all the memory we will ever need */
 static rgb screen[GAME_W*GAME_H];
 static rgb palette[4] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
+
+/* input */
+static input key_cur;
+static input key_prv;
+#define input_get(I, K) (((I) & (K)) == (K))
+#define input_set(I, K) ((I) |=  (K))
+#define input_clr(I, K) ((I) &= ~(K))
+#define key_press(K) input_get(key_cur, K)
+#define key_click(K) (input_get(key_cur, K) && !input_get(key_prv, K))
+
+/* shader sources */
 static s8 *vert_src =
 "#version 330 core\n"
 "layout (location = 0) in vec2 a_pos;\n"
@@ -125,7 +156,8 @@ static s8 *frag_src =
 "}\n"
 "\n";
 
-shader_output
+/* helper functions */
+static shader_output
 make_shader(GLenum type, const s8 *src) {
   shader_output output;
   s32 shader_status;
@@ -143,6 +175,68 @@ make_shader(GLenum type, const s8 *src) {
   return output;
 }
 
+/* callbacks */
+static void
+key_callback(GLFWwindow *window, s32 key, s32 scancode, s32 action, s32 mods) {
+  (void)window; (void)scancode; (void)mods;
+  if (action == GLFW_REPEAT) return;
+  if (action == GLFW_PRESS) {
+    switch (key) {
+      case GLFW_KEY_UP:    input_set(key_cur, K_UP);     break;
+      case GLFW_KEY_LEFT:  input_set(key_cur, K_LEFT);   break;
+      case GLFW_KEY_RIGHT: input_set(key_cur, K_RIGHT);  break;
+      case GLFW_KEY_DOWN:  input_set(key_cur, K_DOWN);   break;
+      case GLFW_KEY_Z:     input_set(key_cur, K_A);      break;
+      case GLFW_KEY_X:     input_set(key_cur, K_B);      break;
+      case GLFW_KEY_A:     input_set(key_cur, K_START);  break;
+      case GLFW_KEY_S:     input_set(key_cur, K_SELECT); break;
+    }
+  } else {
+    switch (key) {
+      case GLFW_KEY_UP:    input_clr(key_cur, K_UP);     break;
+      case GLFW_KEY_LEFT:  input_clr(key_cur, K_LEFT);   break;
+      case GLFW_KEY_RIGHT: input_clr(key_cur, K_RIGHT);  break;
+      case GLFW_KEY_DOWN:  input_clr(key_cur, K_DOWN);   break;
+      case GLFW_KEY_Z:     input_clr(key_cur, K_A);      break;
+      case GLFW_KEY_X:     input_clr(key_cur, K_B);      break;
+      case GLFW_KEY_A:     input_clr(key_cur, K_START);  break;
+      case GLFW_KEY_S:     input_clr(key_cur, K_SELECT); break;
+    }
+  }
+}
+
+/* renderer functions */
+static void
+clear_screen(u8 color_index) {
+  u32 i;
+  for (i = 0; i < GAME_W*GAME_H; i++) {
+    screen[i] = palette[color_index];
+  }
+}
+
+static void
+draw_rect(v2 pos, u32 w, u32 h, u8 color_index) {
+  s32 x_min, x_max;
+  s32 y_min, y_max;
+  s32 x, y;
+  x_min = pos.x;
+  x_max = x_min + w;
+  y_min = pos.y;
+  y_max = y_min + h;
+  if (x_max < 0 || x_min > GAME_W - 1 ||
+      y_max < 0 || y_min > GAME_H - 1) return;
+  for (y = y_min; y < y_max; y++) {
+    if (y < 0) continue;
+    if (y > GAME_H) break;
+    for (x = x_min; x < x_max; x++) {
+      if (x < 0) continue;
+      if (x > GAME_W) break;
+      screen[y * GAME_W + x] = palette[color_index];
+    }
+  }
+}
+
+/* entry point */
 s32
 main(void) {
   /* variables */
@@ -173,6 +267,8 @@ main(void) {
     fprintf(stderr, "error: glfwInit: %s", desc);
     return EXIT_WINDOW;
   }
+
+  glfwSetKeyCallback(window, key_callback);
 
   /* center window */
   vidmode = glfwGetVideoMode(glfwGetPrimaryMonitor());
@@ -265,29 +361,34 @@ main(void) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, GAME_W, GAME_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, screen);
 
   {
-    u32 offset = 0;
-    f32 increament = 0;
+    /* game variables */
+    v2 player_pos = { 6, 5 };
+    v2 level_pos = { 2, 2 };
+    u32 level_w = GAME_W - 4, level_h = GAME_H - 4;
+    f32 dt = 0;
+    f32 prv_time = glfwGetTime();
     while (!glfwWindowShouldClose(window)) {
-      u32 x, y;
-      glClearColor(0.8f, 0.2, 0.2f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT);
-      increament += 0.5f;
-      if (increament > 1.0f) {
-        offset++;
-        increament = 0;
-      }
-      for (y = 0; y < GAME_H; y++) {
-        for (x = 0; x < GAME_W; x++) {
-          u32 i = y * GAME_W + x;
-          screen[i] = palette[(x + y + offset) % 4];
-        }
-      }
+      /* timing */
+      dt = glfwGetTime() - prv_time;
+      prv_time = glfwGetTime();
+      /* logic */
+      if (key_press(K_RIGHT)) player_pos.x += 50 * dt;
+      if (key_press(K_LEFT))  player_pos.x -= 50 * dt;
+      if (key_press(K_UP))    player_pos.y -= 50 * dt;
+      if (key_press(K_DOWN))  player_pos.y += 50 * dt;
+      /* rendering */
+      clear_screen(BLACK);
+      draw_rect(level_pos, level_w, level_h, DARK_GREY);
+      draw_rect(player_pos, 10, 10, LIGHT_GREY);
+      /* internal rendering/input */
       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, GAME_W, GAME_H, GL_RGBA, GL_UNSIGNED_BYTE, screen);
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-      glfwPollEvents();
       glfwSwapBuffers(window);
+      key_prv = key_cur;
+      glfwPollEvents();
     }
   }
+
   /* exit glfw */
   glfwTerminate();
   return 0;
