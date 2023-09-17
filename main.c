@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdio.h>
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
@@ -33,6 +34,7 @@ typedef u8                  input;
 #define DARK_GREY   2
 #define BLACK       3
 #define TRANSPARENT 4
+#define PADDING 2
 
 /* exit codes */
 #define EXIT_GLFW     1
@@ -299,11 +301,55 @@ draw_tile(v2 pos, u32 tile_x, u32 tile_y) {
             x = tx * TILE_SIZE + ox;
             y = ty * TILE_SIZE + oy;
             color_index = atlas[y * ATLAS_W + x];
-            if (color_index < TRANSPARENT) screen[py * GAME_W + px] = palette[color_index];
+            if (color_index < TRANSPARENT) {
+              screen[py * GAME_W + px] = palette[color_index];
+            }
           }
         }
       }
     }
+  }
+}
+
+static void
+draw_text(v2 pos, s8 *fmt, ...) {
+  u32 i;
+  s8 txt[128];
+  v2 cur_pos = pos;
+  va_list args;
+  va_start(args, fmt);
+  vsprintf(txt, fmt, args);
+  va_end(args);
+  for (i = 0; i < 128; i++) {
+    if (txt[i] == '\0') {
+      break;
+    } else if (txt[i] == '\n') {
+      cur_pos.x = pos.x;
+      cur_pos.y += TILE_SIZE + PADDING;
+      continue;
+    } else if (txt[i] >= 'A' && txt[i] <= 'P') {
+      draw_tile(cur_pos, txt[i] - 'A', 13);
+    } else if (txt[i] >= 'Q' && txt[i] <= 'Z') {
+      draw_tile(cur_pos, txt[i] - 'Q', 14);
+    } else if (txt[i] >= '0' && txt[i] <= '1') {
+      draw_tile(cur_pos, txt[i] - '0', 15);
+    } else if (txt[i] != ' ') {
+      switch (txt[i]) {
+        case '.':  draw_tile(cur_pos, 10, 14); break;
+        case ',':  draw_tile(cur_pos, 11, 14); break;
+        case ':':  draw_tile(cur_pos, 12, 14); break;
+        case ';':  draw_tile(cur_pos, 13, 14); break;
+        case '?':  draw_tile(cur_pos, 14, 14); break;
+        case '!':  draw_tile(cur_pos, 15, 14); break;
+        case '-':  draw_tile(cur_pos, 10, 15); break;
+        case '(':  draw_tile(cur_pos, 11, 15); break;
+        case ')':  draw_tile(cur_pos, 12, 15); break;
+        case '"':  draw_tile(cur_pos, 15, 15); break;
+        case '\'': draw_tile(cur_pos, 14, 15); break;
+        default:   draw_tile(cur_pos, 15, 15); break;
+      }
+    }
+    cur_pos.x += TILE_SIZE + PADDING;
   }
 }
 
@@ -402,9 +448,11 @@ update(f32 dt) {
 
 static void
 draw(void) {
+  v2 txt_pos = {0};
   draw_rect(level, DARK_GREY);
   /*draw_rect(player, player_dead ? DARK_GREY : LIGHT_GREY);*/
   draw_tile(player.pos, 0, 0);
+  draw_text(txt_pos, "HELLO, WORLD!\nHIHI");
 }
 
 
