@@ -34,7 +34,6 @@ typedef u8                  input;
 #define DARK_GREY   2
 #define BLACK       3
 #define TRANSPARENT 4
-#define PADDING 2
 
 /* exit codes */
 #define EXIT_GLFW     1
@@ -48,15 +47,6 @@ typedef struct {
   u32 shader;
   b8 failed;
 } shader_output;
-
-typedef struct {
-  f32 x, y;
-} v2;
-
-typedef struct {
-  v2 pos;
-  v2 siz;
-} rect;
 
 enum {
   K_UP     = 1 << 0,
@@ -105,32 +95,32 @@ typedef void    gl_tex_image_2d(GLenum target, GLint level, GLint internal_forma
 typedef void    gl_tex_sub_image_2d(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void * pixels);
 
 /* opengl functions */
-static gl_clear_fn                       *_glClear;
-static gl_clear_color_fn                 *_glClearColor;
-static gl_create_shader_fn               *glCreateShader;
-static gl_shader_source_fn               *glShaderSource;
-static gl_compile_shader_fn              *glCompileShader;
-static gl_get_shader_iv                  *glGetShaderiv;
-static gl_get_shader_info_log            *glGetShaderInfoLog;
-static gl_create_program_fn              *glCreateProgram;
-static gl_attach_shader_fn               *glAttachShader;
-static gl_link_program_fn                *glLinkProgram;
-static gl_get_program_iv_fn              *glGetProgramiv;
-static gl_get_program_info_log_fn        *glGetProgramInfoLog;
-static gl_use_program_fn                 *glUseProgram;
-static gl_gen_vertex_arrays_fn           *glGenVertexArrays;
-static gl_bind_vertex_array_fn           *glBindVertexArray;
-static gl_gen_buffers_fn                 *glGenBuffers;
-static gl_bind_buffer_fn                 *glBindBuffer;
-static gl_buffer_data_fn                 *glBufferData;
-static gl_enable_vertex_attrib_array_fn  *glEnableVertexAttribArray;
-static gl_vertex_attrib_pointer_fn       *glVertexAttribPointer;
-static gl_draw_elements_fn               *_glDrawElements;
-static gl_gen_textures_fn                *_glGenTextures;
-static gl_bind_texture_fn                *_glBindTexture;
-static gl_tex_parameteri_fn              *_glTexParameteri;
-static gl_tex_image_2d                   *_glTexImage2D;
-static gl_tex_sub_image_2d               *_glTexSubImage2D;
+gl_clear_fn                       *_glClear;
+gl_clear_color_fn                 *_glClearColor;
+gl_create_shader_fn               *glCreateShader;
+gl_shader_source_fn               *glShaderSource;
+gl_compile_shader_fn              *glCompileShader;
+gl_get_shader_iv                  *glGetShaderiv;
+gl_get_shader_info_log            *glGetShaderInfoLog;
+gl_create_program_fn              *glCreateProgram;
+gl_attach_shader_fn               *glAttachShader;
+gl_link_program_fn                *glLinkProgram;
+gl_get_program_iv_fn              *glGetProgramiv;
+gl_get_program_info_log_fn        *glGetProgramInfoLog;
+gl_use_program_fn                 *glUseProgram;
+gl_gen_vertex_arrays_fn           *glGenVertexArrays;
+gl_bind_vertex_array_fn           *glBindVertexArray;
+gl_gen_buffers_fn                 *glGenBuffers;
+gl_bind_buffer_fn                 *glBindBuffer;
+gl_buffer_data_fn                 *glBufferData;
+gl_enable_vertex_attrib_array_fn  *glEnableVertexAttribArray;
+gl_vertex_attrib_pointer_fn       *glVertexAttribPointer;
+gl_draw_elements_fn               *_glDrawElements;
+gl_gen_textures_fn                *_glGenTextures;
+gl_bind_texture_fn                *_glBindTexture;
+gl_tex_parameteri_fn              *_glTexParameteri;
+gl_tex_image_2d                   *_glTexImage2D;
+gl_tex_sub_image_2d               *_glTexSubImage2D;
 #define glClear          _glClear
 #define glClearColor     _glClearColor 
 #define glDrawElements   _glDrawElements
@@ -144,6 +134,8 @@ static gl_tex_sub_image_2d               *_glTexSubImage2D;
 static u8 game_memory[MEM_AMOUNT]; /* basically all the memory we will ever need */
 static rgb screen[GAME_W*GAME_H];
 static rgb palette[4] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
+
+static s32 bound_x_min, bound_y_min, bound_x_max, bound_y_max;
 
 /* input */
 static input key_cur;
@@ -178,7 +170,7 @@ static s8 *frag_src =
 "\n";
 
 /* helper functions */
-static shader_output
+shader_output
 make_shader(GLenum type, const s8 *src) {
   shader_output output;
   s32 shader_status;
@@ -196,24 +188,14 @@ make_shader(GLenum type, const s8 *src) {
   return output;
 }
 
-static b8
-rect_collide(rect r1, rect r2) {
-  return r1.pos.x + r1.siz.x > r2.pos.x &&
-         r1.pos.x < r2.pos.x + r2.siz.x &&
-         r1.pos.y + r1.siz.y > r2.pos.y &&
-         r1.pos.y < r2.pos.y + r2.siz.y;
-}
-
-static void
-update_level_rect(rect *level) {
-  level->pos.x += TILE_SIZE;
-  level->pos.y += TILE_SIZE;
-  level->siz.x -= TILE_SIZE * 2;
-  level->siz.y -= TILE_SIZE * 2;
+b8
+rect_collide(s32 x1_min, s32 y1_min, s32 x1_max, s32 y1_max, s32 x2_min, s32 y2_min, s32 x2_max, s32 y2_max) {
+  return x1_max > x2_min && x1_min < x2_max &&
+         y1_max > y2_min && y1_min < y2_max;
 }
 
 /* callbacks */
-static void
+void
 key_callback(GLFWwindow *window, s32 key, s32 scancode, s32 action, s32 mods) {
   (void)window; (void)scancode; (void)mods;
   if (action == GLFW_REPEAT) return;
@@ -243,7 +225,7 @@ key_callback(GLFWwindow *window, s32 key, s32 scancode, s32 action, s32 mods) {
 }
 
 /* renderer functions */
-static void
+void
 clear_screen(u8 color_index) {
   u32 i;
   for (i = 0; i < GAME_W*GAME_H; i++) {
@@ -251,56 +233,65 @@ clear_screen(u8 color_index) {
   }
 }
 
-static void
-draw_rect_v2(v2 pos, u32 w, u32 h, u8 color_index) {
-  s32 x_min, x_max;
-  s32 y_min, y_max;
+void
+set_drawing_bounds(s32 x_min, s32 y_min, s32 x_max, s32 y_max) {
+  if (x_min < 0) x_min = 0;
+  if (y_min < 0) y_min = 0;
+  if (x_max > GAME_W - 1) x_max = GAME_W - 1;
+  if (y_max > GAME_H - 1) y_max = GAME_H - 1;
+  bound_x_min = x_min;
+  bound_y_min = y_min;
+  bound_x_max = x_max;
+  bound_y_max = y_max;
+}
+
+void
+reset_drawing_bounds(void) {
+  bound_x_min = 0;
+  bound_y_min = 0;
+  bound_x_max = GAME_W - 1;
+  bound_y_max = GAME_H - 1;
+}
+
+void
+draw_rect(s32 x_min, s32 y_min, s32 x_max, s32 y_max, u8 color_index) {
   s32 x, y;
-  x_min = pos.x;
-  x_max = x_min + w;
-  y_min = pos.y;
-  y_max = y_min + h;
-  if (x_max < 0 || x_min > GAME_W - 1 ||
-      y_max < 0 || y_min > GAME_H - 1) return;
+  if (x_max < bound_x_min || x_min > bound_x_max ||
+      y_max < bound_y_min || y_min > bound_y_max) return;
   for (y = y_min; y < y_max; y++) {
-    if (y < 0) continue;
-    if (y > GAME_H - 1) break;
+    if (y < bound_y_min) continue;
+    if (y > bound_y_max) break;
     for (x = x_min; x < x_max; x++) {
-      if (x < 0) continue;
-      if (x > GAME_W - 1) break;
+      if (x < bound_x_min) continue;
+      if (x > bound_x_max) break;
       screen[y * GAME_W + x] = palette[color_index];
     }
   }
 }
 
-static void
-draw_rect(rect rect, u8 color_index) {
-  draw_rect_v2(rect.pos, rect.siz.x, rect.siz.y, color_index);
-}
-
-static void
-draw_tile(v2 pos, u32 tile_x, u32 tile_y) {
+void
+draw_tile(s32 x, s32 y, u32 tile_x, u32 tile_y) {
   u32 tx, ty;
-  s32 px = pos.x, py = pos.y;
-  if (px + TILE_SIZE < 0 || px > GAME_W - 1 ||
-      py + TILE_SIZE < 0 || py > GAME_H - 1) return;
+  s32 px = x, py = y;
+  if (x + TILE_SIZE < bound_x_min || x > bound_x_max ||
+      y + TILE_SIZE < bound_y_min || y > bound_y_max) return;
   for (tx = 0; tx < ATLAS_H / TILE_SIZE; tx++) {
     for (ty = 0; ty < ATLAS_W / TILE_SIZE; ty++) {
       if (tx == tile_x && ty == tile_y) {
         u32 ox, oy;
         for (oy = 0; oy < TILE_SIZE; oy++) {
-          py = pos.y + oy;
-          if (py < 0) continue;
-          if (py > GAME_H - 1) break;
+          py = y + oy;
+          if (py < bound_y_min) continue;
+          if (py > bound_y_max) break;
           for (ox = 0; ox < TILE_SIZE; ox++) {
-            u32 x, y;
             u8 color_index;
-            px = pos.x + ox;
-            if (px < 0) continue;
-            if (px > GAME_W - 1) break;
-            x = tx * TILE_SIZE + ox;
-            y = ty * TILE_SIZE + oy;
-            color_index = atlas[y * ATLAS_W + x];
+            s32 ax, ay;
+            px = x + ox;
+            if (px < bound_x_min) continue;
+            if (px > bound_x_max) break;
+            ax = (tx * TILE_SIZE + ox);
+            ay = (ty * TILE_SIZE + oy);
+            color_index = atlas[ay * ATLAS_W + ax];
             if (color_index < TRANSPARENT) {
               screen[py * GAME_W + px] = palette[color_index];
             }
@@ -311,11 +302,11 @@ draw_tile(v2 pos, u32 tile_x, u32 tile_y) {
   }
 }
 
-static void
-draw_text(v2 pos, s8 *fmt, ...) {
+void
+draw_text(s32 x, s32 y, s8 *fmt, ...) {
   u32 i;
   s8 txt[128];
-  v2 cur_pos = pos;
+  u32 origin_x = x;
   va_list args;
   va_start(args, fmt);
   vsprintf(txt, fmt, args);
@@ -324,135 +315,128 @@ draw_text(v2 pos, s8 *fmt, ...) {
     if (txt[i] == '\0') {
       break;
     } else if (txt[i] == '\n') {
-      cur_pos.x = pos.x;
-      cur_pos.y += TILE_SIZE + PADDING;
+      x = origin_x;
+      y += TILE_SIZE;
       continue;
     } else if (txt[i] >= 'A' && txt[i] <= 'P') {
-      draw_tile(cur_pos, txt[i] - 'A', 13);
+      draw_tile(x, y, txt[i] - 'A', 13);
     } else if (txt[i] >= 'Q' && txt[i] <= 'Z') {
-      draw_tile(cur_pos, txt[i] - 'Q', 14);
+      draw_tile(x, y, txt[i] - 'Q', 14);
     } else if (txt[i] >= '0' && txt[i] <= '1') {
-      draw_tile(cur_pos, txt[i] - '0', 15);
+      draw_tile(x, y, txt[i] - '0', 15);
     } else if (txt[i] != ' ') {
       switch (txt[i]) {
-        case '.':  draw_tile(cur_pos, 10, 14); break;
-        case ',':  draw_tile(cur_pos, 11, 14); break;
-        case ':':  draw_tile(cur_pos, 12, 14); break;
-        case ';':  draw_tile(cur_pos, 13, 14); break;
-        case '?':  draw_tile(cur_pos, 14, 14); break;
-        case '!':  draw_tile(cur_pos, 15, 14); break;
-        case '-':  draw_tile(cur_pos, 10, 15); break;
-        case '(':  draw_tile(cur_pos, 11, 15); break;
-        case ')':  draw_tile(cur_pos, 12, 15); break;
-        case '"':  draw_tile(cur_pos, 15, 15); break;
-        case '\'': draw_tile(cur_pos, 14, 15); break;
-        default:   draw_tile(cur_pos, 15, 15); break;
+        case '.':  draw_tile(x, y, 10, 14); break;
+        case ',':  draw_tile(x, y, 11, 14); break;
+        case ':':  draw_tile(x, y, 12, 14); break;
+        case ';':  draw_tile(x, y, 13, 14); break;
+        case '?':  draw_tile(x, y, 14, 14); break;
+        case '!':  draw_tile(x, y, 15, 14); break;
+        case '-':  draw_tile(x, y, 10, 15); break;
+        case '(':  draw_tile(x, y, 11, 15); break;
+        case ')':  draw_tile(x, y, 12, 15); break;
+        case '"':  draw_tile(x, y, 15, 15); break;
+        case '\'': draw_tile(x, y, 14, 15); break;
+        default:   draw_tile(x, y, 15, 15); break;
       }
     }
-    cur_pos.x += TILE_SIZE + PADDING;
+    x += TILE_SIZE;
   }
 }
 
 /* gameplay stuff */
-static rect player;
-static v2 player_nxt_pos;
+static f32 player_x,  player_y;
+static s32 player_nx, player_ny;
 static b8 player_walking;
-static b8 player_dead;
 static direction player_dir;
-static rect level;
+static f32 level_x_min, level_x_max, level_y_min, level_y_max;
+static s32 level_nx_min, level_nx_max, level_ny_min, level_ny_max;
 
 #define PLAYER_SPEED 50
 
-static void
+void
 init(void) {
-  player.pos.x = (GAME_TW >> 1) * TILE_SIZE;
-  player.pos.y = (GAME_TH >> 1) * TILE_SIZE;
-  player.siz.x = player.siz.y = TILE_SIZE;
-  player_nxt_pos = player.pos;
+  player_x = (GAME_TW >> 1) * TILE_SIZE;
+  player_y = (GAME_TH >> 1) * TILE_SIZE;
+  player_nx = player_x;
+  player_ny = player_y;
   player_walking = 0;
-  player_dead = 0;
   player_dir = D_RIGHT;
-  level.pos.x = level.pos.y = 0;
-  level.siz.x = GAME_W;
-  level.siz.y = GAME_H;
+  level_x_min = 0;
+  level_y_min = 0;
+  level_x_max = GAME_W;
+  level_y_max = GAME_H;
+  level_nx_min = level_x_min;
+  level_ny_min = level_y_min;
+  level_nx_max = level_x_max;
+  level_ny_max = level_y_max;
+  reset_drawing_bounds();
 }
 
-static void
-update(f32 dt) {
-  if (!player_dead) {
-    if (!player_walking) {
-      if (key_click(K_UP)) {
-        player_nxt_pos.y -= TILE_SIZE;
-        player_dir = D_UP;
-        player_walking = 1;
-      }
-      if (key_click(K_LEFT)) {
-        player_nxt_pos.x -= TILE_SIZE;
-        player_dir = D_LEFT;
-        player_walking = 1;
-      }
-      if (key_click(K_RIGHT)) {
-        player_nxt_pos.x += TILE_SIZE;
-        player_dir = D_RIGHT;
-        player_walking = 1;
-      }
-      if (key_click(K_DOWN)) {
-        player_nxt_pos.y += TILE_SIZE;
-        player_dir = D_DOWN;
-        player_walking = 1;
-      }
-    } else {
-      switch (player_dir) {
-        case D_UP:
-          player.pos.y -= PLAYER_SPEED * dt;
-          if (player.pos.y < player_nxt_pos.y) {
-            player.pos.y = player_nxt_pos.y;
-            player_walking = 0;
-            update_level_rect(&level);
-            player_dead = !rect_collide(player, level);
-          }
-          break;
-        case D_LEFT:
-          player.pos.x -= PLAYER_SPEED * dt;
-          if (player.pos.x < player_nxt_pos.x) {
-            player.pos.x = player_nxt_pos.x;
-            player_walking = 0;
-            update_level_rect(&level);
-            player_dead = !rect_collide(player, level);
-          }
-          break;
-        case D_RIGHT:
-          player.pos.x += PLAYER_SPEED * dt;
-          if (player.pos.x > player_nxt_pos.x) {
-            player.pos.x = player_nxt_pos.x;
-            player_walking = 0;
-            update_level_rect(&level);
-            player_dead = !rect_collide(player, level);
-          }
-          break;
-        case D_DOWN:
-          player.pos.y += PLAYER_SPEED * dt;
-          if (player.pos.y > player_nxt_pos.y) {
-            player.pos.y = player_nxt_pos.y;
-            player_walking = 0;
-            update_level_rect(&level);
-            player_dead = !rect_collide(player, level);
-          }
-          break;
-      }
-    }
-  } else if (key_click(K_B)) {
-    init();
+void
+player_setup_movement(direction next_dir, s32 add_to_nx, s32 add_to_ny,
+    b8 shrink_level_x_min, b8 shrink_level_y_min, b8 shrink_level_x_max, b8 shrink_level_y_max) {
+  player_nx = player_x + add_to_nx;
+  player_ny = player_y + add_to_ny;
+  if (rect_collide(player_nx, player_ny, player_nx + TILE_SIZE, player_ny + TILE_SIZE, level_x_min, level_y_min, level_x_max, level_y_max)) {
+    player_dir = next_dir;
+    player_walking = 1;
+    level_nx_min = level_x_min + TILE_SIZE * shrink_level_x_min;
+    level_ny_min = level_y_min + TILE_SIZE * shrink_level_y_min;
+    level_nx_max = level_x_max - TILE_SIZE * shrink_level_x_max;
+    level_ny_max = level_y_max - TILE_SIZE * shrink_level_y_max;
   }
 }
 
-static void
+void
+player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
+    b8 shrink_level_x_min, b8 shrink_level_y_min, b8 shrink_level_x_max, b8 shrink_level_y_max) {
+  if (condition) {
+    player_y = player_ny;
+    player_x = player_nx;
+    player_walking = 0;
+    level_x_min = level_nx_min;
+    level_y_min = level_ny_min;
+    level_x_max = level_nx_max;
+    level_y_max = level_ny_max;
+  } else {
+    f32 delta_move = PLAYER_SPEED * dt;
+    player_x += delta_move * sign_x;
+    player_y += delta_move * sign_y;
+    level_x_min += delta_move * shrink_level_x_min;
+    level_y_min += delta_move * shrink_level_y_min;
+    level_x_max -= delta_move * shrink_level_x_max;
+    level_y_max -= delta_move * shrink_level_y_max;
+  }
+}
+
+void
+update(f32 dt) {
+  /* update player */
+  if (!player_walking) {
+    if (key_click(K_B))     init();
+    if (key_click(K_UP))    player_setup_movement(D_UP,    0,        -TILE_SIZE, 0, 0, 0, 1);
+    if (key_click(K_LEFT))  player_setup_movement(D_LEFT, -TILE_SIZE, 0        , 0, 0, 1, 0);
+    if (key_click(K_DOWN))  player_setup_movement(D_DOWN,  0,         TILE_SIZE, 0, 1, 0, 0);
+    if (key_click(K_RIGHT)) player_setup_movement(D_RIGHT, TILE_SIZE, 0        , 1, 0, 0, 0);
+  } else {
+    switch (player_dir) {
+      case D_UP:    player_move(player_y < player_ny-1, dt,  0, -1, 0, 0, 0, 1); break;
+      case D_LEFT:  player_move(player_x < player_nx-1, dt, -1,  0, 0, 0, 1, 0); break;
+      case D_DOWN:  player_move(player_y > player_ny+1, dt,  0,  1, 0, 1, 0, 0); break;
+      case D_RIGHT: player_move(player_x > player_nx+1, dt,  1,  0, 1, 0, 0, 0); break;
+    }
+  }
+}
+
+void
 draw(void) {
-  v2 txt_pos = {0};
-  draw_rect(level, DARK_GREY);
-  /*draw_rect(player, player_dead ? DARK_GREY : LIGHT_GREY);*/
-  draw_tile(player.pos, 0, 0);
-  draw_text(txt_pos, "HELLO, WORLD!\nHIHI");
+  draw_rect(level_x_min, level_y_min, level_x_max, level_y_max, DARK_GREY);
+  set_drawing_bounds(level_x_min, level_y_min, level_x_max, level_y_max);
+  draw_tile(player_x, player_y, 0, 0);
+  draw_tile(32, 32, 0, 2);
+  reset_drawing_bounds();
+  draw_text(0, 0, "IN THIS WORLD...");
 }
 
 

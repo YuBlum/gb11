@@ -18,6 +18,7 @@ out=build/$(bin)_$(target)
 .PHONY: clean all
 
 all:
+	./make_atlas
 	$(cc) $(flags) -o $(out) $(libs) $(defs) main.c
 	cp -rf ./res/* ./build/
 
