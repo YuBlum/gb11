@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
-
+#include <string.h>
 
 /* typedefs */
 typedef char                b8;
@@ -28,12 +28,7 @@ typedef u8                  input;
 #define WINDOW_H (GAME_H * GAME_S)
 #define WINDOW_TITLE "GB11"
 #define TILE_SIZE  8
-#define WHITE       0
-#define LIGHT_GREY  1
-#define DARK_GREY   2
-#define BLACK       3
-#define TRANSPARENT 4
-
+/* colors */
 /* exit codes */
 #define EXIT_GLFW     1
 #define EXIT_WINDOW   2
@@ -47,6 +42,15 @@ typedef struct {
   b8 failed;
 } shader_output;
 
+#define BEGIN_TXT_LINES_CAP 5
+typedef struct {
+  u32 x, y;
+  u32 w, h;
+  s8 *begin_txt[BEGIN_TXT_LINES_CAP];
+  s8 *map;
+} level;
+
+/* enums */
 enum {
   K_UP     = 1 << 0,
   K_LEFT   = 1 << 1,
@@ -57,6 +61,15 @@ enum {
   K_START  = 1 << 6,
   K_SELECT = 1 << 7
 };
+
+typedef enum {
+  WHITE = 0,
+  LIGHT_GRAY,
+  DARK_GRAY,
+  BLACK,
+  TRANSPARENT,
+  COLORS_AMOUNT = TRANSPARENT
+} color;
 
 typedef enum {
   D_UP = 0,
@@ -96,48 +109,68 @@ typedef void    gl_tex_sub_image_2d(GLenum target, GLint level, GLint xoffset, G
 /* opengl functions */
 gl_clear_fn                       *_glClear;
 gl_clear_color_fn                 *_glClearColor;
-gl_create_shader_fn               *glCreateShader;
-gl_shader_source_fn               *glShaderSource;
-gl_compile_shader_fn              *glCompileShader;
-gl_get_shader_iv                  *glGetShaderiv;
-gl_get_shader_info_log            *glGetShaderInfoLog;
-gl_create_program_fn              *glCreateProgram;
-gl_attach_shader_fn               *glAttachShader;
-gl_link_program_fn                *glLinkProgram;
-gl_get_program_iv_fn              *glGetProgramiv;
-gl_get_program_info_log_fn        *glGetProgramInfoLog;
-gl_use_program_fn                 *glUseProgram;
-gl_gen_vertex_arrays_fn           *glGenVertexArrays;
-gl_bind_vertex_array_fn           *glBindVertexArray;
-gl_gen_buffers_fn                 *glGenBuffers;
-gl_bind_buffer_fn                 *glBindBuffer;
-gl_buffer_data_fn                 *glBufferData;
-gl_enable_vertex_attrib_array_fn  *glEnableVertexAttribArray;
-gl_vertex_attrib_pointer_fn       *glVertexAttribPointer;
+gl_create_shader_fn               *_glCreateShader;
+gl_shader_source_fn               *_glShaderSource;
+gl_compile_shader_fn              *_glCompileShader;
+gl_get_shader_iv                  *_glGetShaderiv;
+gl_get_shader_info_log            *_glGetShaderInfoLog;
+gl_create_program_fn              *_glCreateProgram;
+gl_attach_shader_fn               *_glAttachShader;
+gl_link_program_fn                *_glLinkProgram;
+gl_get_program_iv_fn              *_glGetProgramiv;
+gl_get_program_info_log_fn        *_glGetProgramInfoLog;
+gl_use_program_fn                 *_glUseProgram;
+gl_gen_vertex_arrays_fn           *_glGenVertexArrays;
+gl_bind_vertex_array_fn           *_glBindVertexArray;
+gl_gen_buffers_fn                 *_glGenBuffers;
+gl_bind_buffer_fn                 *_glBindBuffer;
+gl_buffer_data_fn                 *_glBufferData;
+gl_enable_vertex_attrib_array_fn  *_glEnableVertexAttribArray;
+gl_vertex_attrib_pointer_fn       *_glVertexAttribPointer;
 gl_draw_elements_fn               *_glDrawElements;
 gl_gen_textures_fn                *_glGenTextures;
 gl_bind_texture_fn                *_glBindTexture;
 gl_tex_parameteri_fn              *_glTexParameteri;
 gl_tex_image_2d                   *_glTexImage2D;
 gl_tex_sub_image_2d               *_glTexSubImage2D;
-#define glClear          _glClear
-#define glClearColor     _glClearColor 
-#define glDrawElements   _glDrawElements
-#define glGenTextures    _glGenTextures
-#define glBindTexture    _glBindTexture
-#define glTexParameteri  _glTexParameteri
-#define glTexImage2D     _glTexImage2D
-#define glTexSubImage2D  _glTexSubImage2D
+
+#define glClear                     _glClear
+#define glClearColor                _glClearColor
+#define glCreateShader              _glCreateShader
+#define glShaderSource              _glShaderSource
+#define glCompileShader             _glCompileShader
+#define glGetShaderiv               _glGetShaderiv
+#define glGetShaderInfoLog          _glGetShaderInfoLog
+#define glCreateProgram             _glCreateProgram
+#define glAttachShader              _glAttachShader
+#define glLinkProgram               _glLinkProgram
+#define glGetProgramiv              _glGetProgramiv
+#define glGetProgramInfoLog         _glGetProgramInfoLog
+#define glUseProgram                _glUseProgram
+#define glGenVertexArrays           _glGenVertexArrays
+#define glBindVertexArray           _glBindVertexArray
+#define glGenBuffers                _glGenBuffers
+#define glBindBuffer                _glBindBuffer
+#define glBufferData                _glBufferData
+#define glEnableVertexAttribArray   _glEnableVertexAttribArray
+#define glVertexAttribPointer       _glVertexAttribPointer
+#define glDrawElements              _glDrawElements
+#define glGenTextures               _glGenTextures
+#define glBindTexture               _glBindTexture
+#define glTexParameteri             _glTexParameteri
+#define glTexImage2D                _glTexImage2D
+#define glTexSubImage2D             _glTexSubImage2D
 
 /* global variables */
-static rgb screen[GAME_W*GAME_H];
-static rgb palette[4] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
+rgb screen[GAME_W*GAME_H];
+rgb colors[COLORS_AMOUNT] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
+rgb palette[COLORS_AMOUNT];
 
-static s32 bound_x_min, bound_y_min, bound_x_max, bound_y_max;
+s32 bound_x_min, bound_y_min, bound_x_max, bound_y_max;
 
 /* input */
-static input key_cur;
-static input key_prv;
+input key_cur;
+input key_prv;
 #define input_get(I, K) (((I) & (K)) == (K))
 #define input_set(I, K) ((I) |=  (K))
 #define input_clr(I, K) ((I) &= ~(K))
@@ -145,7 +178,7 @@ static input key_prv;
 #define key_click(K) (input_get(key_cur, K) && !input_get(key_prv, K))
 
 /* shader sources */
-static s8 *vert_src =
+s8 *vert_src =
 "#version 330 core\n"
 "layout (location = 0) in vec2 a_pos;\n"
 "layout (location = 1) in vec2 a_uv;\n"
@@ -156,7 +189,7 @@ static s8 *vert_src =
 "  v_uv = a_uv;"
 "}\n"
 "\n";
-static s8 *frag_src =
+s8 *frag_src =
 "#version 330 core\n"
 "out vec4 f_col;\n"
 "in vec2 v_uv;"
@@ -235,12 +268,12 @@ void
 set_drawing_bounds(s32 x_min, s32 y_min, s32 x_max, s32 y_max) {
   if (x_min < 0) x_min = 0;
   if (y_min < 0) y_min = 0;
-  if (x_max > GAME_W - 1) x_max = GAME_W - 1;
-  if (y_max > GAME_H - 1) y_max = GAME_H - 1;
+  if (x_max > GAME_W) x_max = GAME_W;
+  if (y_max > GAME_H) y_max = GAME_H;
   bound_x_min = x_min;
   bound_y_min = y_min;
-  bound_x_max = x_max;
-  bound_y_max = y_max;
+  bound_x_max = x_max - 1;
+  bound_y_max = y_max - 1;
 }
 
 void
@@ -304,7 +337,6 @@ void
 draw_text(s32 x, s32 y, s8 *fmt, ...) {
   u32 i;
   s8 txt[128];
-  u32 origin_x = x;
   va_list args;
   va_start(args, fmt);
   vsprintf(txt, fmt, args);
@@ -312,10 +344,6 @@ draw_text(s32 x, s32 y, s8 *fmt, ...) {
   for (i = 0; i < 128; i++) {
     if (txt[i] == '\0') {
       break;
-    } else if (txt[i] == '\n') {
-      x = origin_x;
-      y += TILE_SIZE;
-      continue;
     } else if (txt[i] >= 'A' && txt[i] <= 'P') {
       draw_tile(x, y, txt[i] - 'A', 13);
     } else if (txt[i] >= 'Q' && txt[i] <= 'Z') {
@@ -343,43 +371,150 @@ draw_text(s32 x, s32 y, s8 *fmt, ...) {
 }
 
 /* gameplay stuff */
-static f32 player_x,  player_y;
-static s32 player_nx, player_ny;
-static b8 player_walking;
-static direction player_dir;
+f32 player_x,  player_y;
+s32 player_nx, player_ny;
+b8 player_walking;
+direction player_dir;
 
-static s32 door_x, door_y;
-static s32 key_x, key_y;
-static b8 key_collected;
+s32 door_x, door_y;
+s32 key_x, key_y;
+b8 key_collected;
 
-static f32 level_x_min, level_x_max, level_y_min, level_y_max;
-static s32 level_nx_min, level_nx_max, level_ny_min, level_ny_max;
+f32 level_x_min, level_x_max, level_y_min, level_y_max;
+s32 level_nx_min, level_nx_max, level_ny_min, level_ny_max;
 
 #define PLAYER_SPEED 50
 
+#define LVL_MAX_W 20
+#define LVL_MAX_H 18
+
+b8 end_level_transition;
+b8 begin_level_transition;
+b8 begin_level_transition_wait;
+u32 begin_level_trasition_blink_count;
+f32 level_transition_timer;
+u32 current_level;
+level levels[] = {
+  {
+    0, 0,
+    20, 18,
+    { "HELLO MY FRIEND",
+      "NICE TO MEET YOU ",
+      "I GUESS",
+      0
+    },
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...........k........"
+    "...................."
+    "...................."
+    "...................."
+    ".........p.........."
+    "...................."
+    "...................."
+    "....d..............."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+  },
+  {
+    1, 1,
+    18, 16,
+    { "AGAIN", 0 },
+    ".................."
+    ".................."
+    ".................."
+    ".....d............"
+    ".................."
+    ".................."
+    "..............k..."
+    ".................."
+    ".................."
+    ".........p........"
+    ".................."
+    ".................."
+    ".................."
+    ".................."
+    ".................."
+    ".................."
+  }
+};
+u32 levels_begin_txt_lines_amount[sizeof (levels) / sizeof (level)];
+s32 levels_begin_txt_x[sizeof (levels) / sizeof (level)][BEGIN_TXT_LINES_CAP];
+s32 levels_begin_txt_y[sizeof (levels) / sizeof (level)][BEGIN_TXT_LINES_CAP];
+
 void
-init(void) {
-  player_x = (GAME_TW >> 1) * TILE_SIZE;
-  player_y = (GAME_TH >> 1) * TILE_SIZE;
-  player_nx = player_x;
-  player_ny = player_y;
+load_level(u32 level_idx) {
+  u32 cx, cy;
   player_walking = 0;
-  player_dir = D_RIGHT;
-
-  door_x = 32;
-  door_y = 32;
-  key_x = 64;
-  key_y = 64;
+  player_dir = 0;
   key_collected = 0;
-
-  level_x_min = 0;
-  level_y_min = 0;
-  level_x_max = GAME_W;
-  level_y_max = GAME_H;
+  level_x_min = levels[level_idx].x * TILE_SIZE;
+  level_y_min = levels[level_idx].y * TILE_SIZE;
+  level_x_max = (levels[level_idx].x + levels[level_idx].w) * TILE_SIZE;
+  level_y_max = (levels[level_idx].y + levels[level_idx].h) * TILE_SIZE;
   level_nx_min = level_x_min;
   level_ny_min = level_y_min;
   level_nx_max = level_x_max;
   level_ny_max = level_y_max;
+  for (cy = 0; cy < levels[level_idx].w; cy++) {
+    for (cx = 0; cx < levels[level_idx].h; cx++) {
+      s32 x = (cx + levels[level_idx].x) * TILE_SIZE;
+      s32 y = (cy + levels[level_idx].y) * TILE_SIZE ;
+      switch (levels[level_idx].map[cy * levels[level_idx].w + cx]) {
+        case 'p':
+          player_x = x;
+          player_y = y;
+          player_nx = player_x;
+          player_ny = player_y;
+          break;
+        case 'd':
+          door_x = x;
+          door_y = y;
+          break;
+        case 'k':
+          key_x = x;
+          key_y = y;
+          break;
+      }
+    }
+  }
+  current_level = level_idx;
+  reset_drawing_bounds();
+}
+
+void
+init(void) {
+  u32 i;
+  end_level_transition = 0;
+  begin_level_transition = 1;
+  begin_level_transition_wait = 0;
+  level_transition_timer = 0;
+  current_level = 0;
+  palette[WHITE]      = colors[BLACK];
+  palette[LIGHT_GRAY] = colors[BLACK];
+  palette[DARK_GRAY]  = colors[BLACK];
+  palette[BLACK]      = colors[BLACK];
+  for (i = 0; i < sizeof (levels) / sizeof (level); i++) {
+    u32 j;
+    u32 begin_txt_y;
+    levels_begin_txt_lines_amount[i] = 0;
+    for (j = 0; j < BEGIN_TXT_LINES_CAP; j++) {
+      if (!levels[i].begin_txt[j]) break;
+      levels_begin_txt_lines_amount[i]++;
+    }
+    begin_txt_y = (GAME_H >> 1) - ((levels_begin_txt_lines_amount[i] * TILE_SIZE) >> 1);
+    for (j = 0; j < levels_begin_txt_lines_amount[i]; j++) {
+      levels_begin_txt_x[i][j] = (GAME_W >> 1) - ((strlen(levels[i].begin_txt[j]) * TILE_SIZE) >> 1);
+      levels_begin_txt_y[i][j] = begin_txt_y;
+      begin_txt_y += TILE_SIZE;
+    }
+  }
   reset_drawing_bounds();
 }
 
@@ -410,7 +545,12 @@ player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
     level_y_min = level_ny_min;
     level_x_max = level_nx_max;
     level_y_max = level_ny_max;
-    if (!key_collected && player_x == key_x && player_y == key_y) {
+    if (key_collected) {
+      if (player_x == door_x && player_y == door_y) {
+        end_level_transition = 1;
+        level_transition_timer = 0;
+      }
+    } else if (player_x == key_x && player_y == key_y) {
       key_collected = 1;
     }
   } else {
@@ -426,9 +566,70 @@ player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
 
 void
 update(f32 dt) {
+  /* level transitions */
+  if (begin_level_transition) {
+    if (begin_level_transition_wait) {
+      if (begin_level_trasition_blink_count == 0) {
+        if (key_click(K_START)) begin_level_trasition_blink_count++;
+      } else if (begin_level_trasition_blink_count < 8) {
+        if (level_transition_timer < 0.1f) {
+          level_transition_timer += dt;
+        } else {
+          level_transition_timer = 0;
+          begin_level_trasition_blink_count++;
+          palette[WHITE] = palette[WHITE] == colors[WHITE] ? colors[BLACK] : colors[WHITE];
+        }
+      } else {
+        palette[WHITE] = colors[WHITE];
+        begin_level_trasition_blink_count = 0;
+        begin_level_transition = 0;
+        begin_level_transition_wait = 0;
+        load_level(current_level);
+      }
+    } else if (level_transition_timer < 0.2f) {
+      level_transition_timer += dt;
+    } else {
+      level_transition_timer = 0;
+      if (palette[WHITE] == colors[BLACK]) {
+        palette[WHITE]      = colors[DARK_GRAY];
+      } else if (palette[WHITE] == colors[DARK_GRAY]) {
+        palette[WHITE]      = colors[LIGHT_GRAY];
+        palette[LIGHT_GRAY] = colors[DARK_GRAY];
+      } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
+        palette[WHITE]      = colors[WHITE];
+        palette[LIGHT_GRAY] = colors[LIGHT_GRAY];
+        palette[DARK_GRAY]  = colors[DARK_GRAY];
+      } else if (palette[WHITE] == colors[WHITE]) {
+        begin_level_transition_wait = 1;
+      }
+    }
+    return;
+  } else if (end_level_transition) {
+    if (level_transition_timer < 0.2f) {
+      level_transition_timer += dt;
+    } else {
+      level_transition_timer = 0;
+      if (palette[WHITE] == colors[WHITE]) {
+        palette[WHITE]      = colors[LIGHT_GRAY];
+        palette[LIGHT_GRAY] = colors[DARK_GRAY];
+        palette[DARK_GRAY]  = colors[BLACK];
+      } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
+        palette[WHITE]      = colors[DARK_GRAY];
+        palette[LIGHT_GRAY] = colors[BLACK];
+      } else if (palette[WHITE] == colors[DARK_GRAY]) {
+        palette[WHITE]      = colors[BLACK];
+      } else if (palette[WHITE] == colors[BLACK]) {
+        end_level_transition = 0;
+        begin_level_transition = 1;
+        current_level++;
+      }
+    }
+    return;
+  }
+
   /* update player */
   if (!player_walking) {
-    if (key_click(K_B))     init();
+    if (key_click(K_B))     load_level(current_level);
     if (key_click(K_UP))    player_setup_movement(D_UP,    0,        -TILE_SIZE, 0, 0, 0, 1);
     if (key_click(K_LEFT))  player_setup_movement(D_LEFT, -TILE_SIZE, 0        , 0, 0, 1, 0);
     if (key_click(K_DOWN))  player_setup_movement(D_DOWN,  0,         TILE_SIZE, 0, 1, 0, 0);
@@ -445,7 +646,14 @@ update(f32 dt) {
 
 void
 draw(void) {
-  draw_rect(level_x_min, level_y_min, level_x_max, level_y_max, DARK_GREY);
+  if (begin_level_transition) {
+    u32 i;
+    for (i = 0; i < levels_begin_txt_lines_amount[current_level]; i++) {
+      draw_text(levels_begin_txt_x[current_level][i], levels_begin_txt_y[current_level][i], levels[current_level].begin_txt[i]);
+    }
+    return;
+  }
+  draw_rect(level_x_min, level_y_min, level_x_max, level_y_max, DARK_GRAY);
   set_drawing_bounds(level_x_min, level_y_min, level_x_max, level_y_max);
   draw_tile(door_x, door_y, key_collected, 2);
   if (!key_collected) draw_tile(key_x, key_y, 0, 1);
