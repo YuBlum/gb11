@@ -19,7 +19,6 @@ typedef u8                  input;
 #include "./atlas.h"
 
 /* defines */
-#define MEM_AMOUNT 1024*8
 #define GAME_W  160
 #define GAME_H  144
 #define GAME_TW (GAME_W >> 3)
@@ -131,7 +130,6 @@ gl_tex_sub_image_2d               *_glTexSubImage2D;
 #define glTexSubImage2D  _glTexSubImage2D
 
 /* global variables */
-static u8 game_memory[MEM_AMOUNT]; /* basically all the memory we will ever need */
 static rgb screen[GAME_W*GAME_H];
 static rgb palette[4] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
 
@@ -349,6 +347,11 @@ static f32 player_x,  player_y;
 static s32 player_nx, player_ny;
 static b8 player_walking;
 static direction player_dir;
+
+static s32 door_x, door_y;
+static s32 key_x, key_y;
+static b8 key_collected;
+
 static f32 level_x_min, level_x_max, level_y_min, level_y_max;
 static s32 level_nx_min, level_nx_max, level_ny_min, level_ny_max;
 
@@ -362,6 +365,13 @@ init(void) {
   player_ny = player_y;
   player_walking = 0;
   player_dir = D_RIGHT;
+
+  door_x = 32;
+  door_y = 32;
+  key_x = 64;
+  key_y = 64;
+  key_collected = 0;
+
   level_x_min = 0;
   level_y_min = 0;
   level_x_max = GAME_W;
@@ -378,7 +388,8 @@ player_setup_movement(direction next_dir, s32 add_to_nx, s32 add_to_ny,
     b8 shrink_level_x_min, b8 shrink_level_y_min, b8 shrink_level_x_max, b8 shrink_level_y_max) {
   player_nx = player_x + add_to_nx;
   player_ny = player_y + add_to_ny;
-  if (rect_collide(player_nx, player_ny, player_nx + TILE_SIZE, player_ny + TILE_SIZE, level_x_min, level_y_min, level_x_max, level_y_max)) {
+  if (rect_collide(player_nx, player_ny, player_nx + TILE_SIZE, player_ny + TILE_SIZE, level_x_min, level_y_min, level_x_max, level_y_max) &&
+    (key_collected || (player_nx != door_x || player_ny != door_y))) {
     player_dir = next_dir;
     player_walking = 1;
     level_nx_min = level_x_min + TILE_SIZE * shrink_level_x_min;
@@ -399,6 +410,9 @@ player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
     level_y_min = level_ny_min;
     level_x_max = level_nx_max;
     level_y_max = level_ny_max;
+    if (!key_collected && player_x == key_x && player_y == key_y) {
+      key_collected = 1;
+    }
   } else {
     f32 delta_move = PLAYER_SPEED * dt;
     player_x += delta_move * sign_x;
@@ -433,10 +447,10 @@ void
 draw(void) {
   draw_rect(level_x_min, level_y_min, level_x_max, level_y_max, DARK_GREY);
   set_drawing_bounds(level_x_min, level_y_min, level_x_max, level_y_max);
+  draw_tile(door_x, door_y, key_collected, 2);
+  if (!key_collected) draw_tile(key_x, key_y, 0, 1);
   draw_tile(player_x, player_y, 0, 0);
-  draw_tile(32, 32, 0, 2);
   reset_drawing_bounds();
-  draw_text(0, 0, "IN THIS WORLD...");
 }
 
 
@@ -449,8 +463,6 @@ main(void) {
   u32 shader;
   u32 vao, vbo, ibo;
   u32 screen_tex;
-
-  (void)game_memory;
 
   /* init stuff */
   if (!glfwInit()) {
