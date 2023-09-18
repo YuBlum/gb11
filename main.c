@@ -398,9 +398,10 @@ level levels[] = {
   {
     0, 0,
     20, 18,
-    { "HELLO MY FRIEND",
-      "NICE TO MEET YOU ",
-      "I GUESS",
+    {
+      "WHEN EVERYTHING",
+      "SEEMS ABOUT TO",
+      "COLAPSE",
       0
     },
     "...................."
@@ -425,7 +426,12 @@ level levels[] = {
   {
     1, 1,
     18, 16,
-    { "AGAIN", 0 },
+    {
+      "WHEN YOU LOOK",
+      "AROUND AND ALL",
+      "YOU SEE ARE CORNERS",
+      0
+    },
     ".................."
     ".................."
     ".................."
@@ -442,7 +448,142 @@ level levels[] = {
     ".................."
     ".................."
     ".................."
-  }
+  },
+  {
+    0, 0,
+    20, 18,
+    {
+      "THE FEELING OF",
+      "COMPLETE",
+      "CLAUSTROPHOBIA",
+      "IS WHAT DRIVES",
+      "YOU CRAZY"
+    },
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...........k........"
+    "...................."
+    "...................."
+    "...................."
+    ".........p.........."
+    "...................."
+    "...................."
+    "....d..............."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+  },
+  {
+    0, 0,
+    20, 18,
+    {
+      "YOU NEED TO GET OUT",
+      0
+    },
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...........k........"
+    "...................."
+    "...................."
+    "...................."
+    ".........p.........."
+    "...................."
+    "...................."
+    "....d..............."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+  },
+  {
+    0, 0,
+    20, 18,
+    {
+      "OUT OF THE MADNESS",
+      "OUT OF THIS PLANE",
+      "OUT OF YOUR HEAD",
+      0
+    },
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...........k........"
+    "...................."
+    "...................."
+    "...................."
+    ".........p.........."
+    "...................."
+    "...................."
+    "....d..............."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+  },
+  {
+    0, 0,
+    20, 18,
+    {
+      "BUT YOU CAN'T...",
+      0
+    },
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...........k........"
+    "...................."
+    "...................."
+    "...................."
+    ".........p.........."
+    "...................."
+    "...................."
+    "....d..............."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+  },
+  {
+    0, 0,
+    20, 18,
+    {
+      "BUT I CAN'T...",
+      0
+    },
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...........k........"
+    "...................."
+    "...................."
+    "...................."
+    ".........p.........."
+    "...................."
+    "...................."
+    "....d..............."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+    "...................."
+  },
 };
 u32 levels_begin_txt_lines_amount[sizeof (levels) / sizeof (level)];
 s32 levels_begin_txt_x[sizeof (levels) / sizeof (level)][BEGIN_TXT_LINES_CAP];
@@ -570,21 +711,43 @@ update(f32 dt) {
   if (begin_level_transition) {
     if (begin_level_transition_wait) {
       if (begin_level_trasition_blink_count == 0) {
-        if (key_click(K_START)) begin_level_trasition_blink_count++;
-      } else if (begin_level_trasition_blink_count < 8) {
-        if (level_transition_timer < 0.1f) {
+        if (key_click(K_START)) begin_level_trasition_blink_count = 1;
+      } else {
+        if (level_transition_timer < 0.2f) {
           level_transition_timer += dt;
         } else {
           level_transition_timer = 0;
-          begin_level_trasition_blink_count++;
-          palette[WHITE] = palette[WHITE] == colors[WHITE] ? colors[BLACK] : colors[WHITE];
+          if (begin_level_trasition_blink_count == 1) {
+            if (palette[WHITE] == colors[WHITE]) {
+              palette[WHITE]      = colors[LIGHT_GRAY];
+              palette[LIGHT_GRAY] = colors[DARK_GRAY];
+              palette[DARK_GRAY]  = colors[BLACK];
+            } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
+              palette[WHITE]      = colors[DARK_GRAY];
+              palette[LIGHT_GRAY] = colors[BLACK];
+            } else if (palette[WHITE] == colors[DARK_GRAY]) {
+              palette[WHITE]      = colors[BLACK];
+            } else if (palette[WHITE] == colors[BLACK]) {
+              begin_level_trasition_blink_count = 2;
+              load_level(current_level);
+            }
+          } else {
+            if (palette[WHITE] == colors[BLACK]) {
+              palette[WHITE]      = colors[DARK_GRAY];
+            } else if (palette[WHITE] == colors[DARK_GRAY]) {
+              palette[WHITE]      = colors[LIGHT_GRAY];
+              palette[LIGHT_GRAY] = colors[DARK_GRAY];
+            } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
+              palette[WHITE]      = colors[WHITE];
+              palette[LIGHT_GRAY] = colors[LIGHT_GRAY];
+              palette[DARK_GRAY]  = colors[DARK_GRAY];
+            } else if (palette[WHITE] == colors[WHITE]) {
+              begin_level_trasition_blink_count = 0;
+              begin_level_transition = 0;
+              begin_level_transition_wait = 0;
+            }
+          }
         }
-      } else {
-        palette[WHITE] = colors[WHITE];
-        begin_level_trasition_blink_count = 0;
-        begin_level_transition = 0;
-        begin_level_transition_wait = 0;
-        load_level(current_level);
       }
     } else if (level_transition_timer < 0.2f) {
       level_transition_timer += dt;
@@ -646,7 +809,7 @@ update(f32 dt) {
 
 void
 draw(void) {
-  if (begin_level_transition) {
+  if (begin_level_transition && begin_level_trasition_blink_count < 2) {
     u32 i;
     for (i = 0; i < levels_begin_txt_lines_amount[current_level]; i++) {
       draw_text(levels_begin_txt_x[current_level][i], levels_begin_txt_y[current_level][i], levels[current_level].begin_txt[i]);
