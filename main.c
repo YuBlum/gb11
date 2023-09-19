@@ -18,7 +18,7 @@ typedef u8                  input;
 
 #include "./atlas.h"
 
-/* defines */
+/* config */
 #define GAME_W  160
 #define GAME_H  144
 #define GAME_TW (GAME_W >> 3)
@@ -28,7 +28,6 @@ typedef u8                  input;
 #define WINDOW_H (GAME_H * GAME_S)
 #define WINDOW_TITLE "GB11"
 #define TILE_SIZE  8
-/* colors */
 /* exit codes */
 #define EXIT_GLFW     1
 #define EXIT_WINDOW   2
@@ -50,8 +49,17 @@ typedef struct {
   s8 *map;
 } level;
 
+typedef struct {
+  enum {
+    FADE_NONE = 0,
+    FADE_OUT,
+    FADE_IN
+  } fade_state;
+  b8 is_happening;
+} transition;
+
 /* enums */
-enum {
+typedef enum {
   K_UP     = 1 << 0,
   K_LEFT   = 1 << 1,
   K_RIGHT  = 1 << 2,
@@ -60,7 +68,7 @@ enum {
   K_B      = 1 << 5,
   K_START  = 1 << 6,
   K_SELECT = 1 << 7
-};
+} key;
 
 typedef enum {
   WHITE = 0,
@@ -161,13 +169,6 @@ gl_tex_sub_image_2d               *_glTexSubImage2D;
 #define glTexImage2D                _glTexImage2D
 #define glTexSubImage2D             _glTexSubImage2D
 
-/* global variables */
-rgb screen[GAME_W*GAME_H];
-rgb colors[COLORS_AMOUNT] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
-rgb palette[COLORS_AMOUNT];
-
-s32 bound_x_min, bound_y_min, bound_x_max, bound_y_max;
-
 /* input */
 input key_cur;
 input key_prv;
@@ -255,7 +256,12 @@ key_callback(GLFWwindow *window, s32 key, s32 scancode, s32 action, s32 mods) {
   }
 }
 
-/* renderer functions */
+/* renderer */
+rgb screen[GAME_W*GAME_H];
+rgb colors[COLORS_AMOUNT] = { 0x9bbc0f, 0x8bac0f, 0x306230, 0x0f380f };
+rgb palette[COLORS_AMOUNT];
+s32 bound_x_min, bound_y_min, bound_x_max, bound_y_max;
+
 void
 clear_screen(u8 color_index) {
   u32 i;
@@ -380,19 +386,30 @@ s32 door_x, door_y;
 s32 key_x, key_y;
 b8 key_collected;
 
+b8 grow_level;
+direction grow_level_dir;
 f32 level_x_min, level_x_max, level_y_min, level_y_max;
 s32 level_nx_min, level_nx_max, level_ny_min, level_ny_max;
 
-#define PLAYER_SPEED 50
+#define ARROWS_CAP 10
+typedef struct {
+  direction dir;
+  s32 x, y;
+  b8 collected;
+} arrow;
+arrow arrows[ARROWS_CAP];
+u32 arrows_amount;
+
+#define PLAYER_SPEED 80
 
 #define LVL_MAX_W 20
 #define LVL_MAX_H 18
 
-b8 end_level_transition;
-b8 begin_level_transition;
-b8 begin_level_transition_wait;
-u32 begin_level_trasition_blink_count;
-f32 level_transition_timer;
+#define TRANSITION_SPEED 0.2f
+
+transition end_level;
+transition begin_level;
+f32 transition_timer;
 u32 current_level;
 level levels[] = {
   {
@@ -407,17 +424,17 @@ level levels[] = {
     "...................."
     "...................."
     "...................."
+    ".............k......"
     "...................."
     "...................."
-    "...........k........"
     "...................."
     "...................."
     "...................."
     ".........p.........."
+    ".............v......"
     "...................."
     "...................."
     "....d..............."
-    "...................."
     "...................."
     "...................."
     "...................."
@@ -569,16 +586,16 @@ level levels[] = {
     "...................."
     "...................."
     "...................."
+    "................k..."
     "...................."
-    "...........k........"
     "...................."
     "...................."
     "...................."
     ".........p.........."
     "...................."
     "...................."
-    "....d..............."
     "...................."
+    "....d..............."
     "...................."
     "...................."
     "...................."
@@ -590,11 +607,22 @@ s32 levels_begin_txt_x[sizeof (levels) / sizeof (level)][BEGIN_TXT_LINES_CAP];
 s32 levels_begin_txt_y[sizeof (levels) / sizeof (level)][BEGIN_TXT_LINES_CAP];
 
 void
+add_arrow(direction dir, s32 x, s32 y) {
+  if (arrows_amount == ARROWS_CAP) return;
+  arrows[arrows_amount].x         = x;
+  arrows[arrows_amount].y         = y;
+  arrows[arrows_amount].dir       = dir;
+  arrows[arrows_amount].collected = 0;
+  arrows_amount++;
+}
+
+void
 load_level(u32 level_idx) {
   u32 cx, cy;
   player_walking = 0;
   player_dir = 0;
   key_collected = 0;
+  arrows_amount = 0;
   level_x_min = levels[level_idx].x * TILE_SIZE;
   level_y_min = levels[level_idx].y * TILE_SIZE;
   level_x_max = (levels[level_idx].x + levels[level_idx].w) * TILE_SIZE;
@@ -622,6 +650,18 @@ load_level(u32 level_idx) {
           key_x = x;
           key_y = y;
           break;
+        case '^':
+          add_arrow(D_UP, x, y);
+          break;
+        case '<':
+          add_arrow(D_LEFT, x, y);
+          break;
+        case '>':
+          add_arrow(D_RIGHT, x, y);
+          break;
+        case 'v':
+          add_arrow(D_DOWN, x, y);
+          break;
       }
     }
   }
@@ -632,15 +672,14 @@ load_level(u32 level_idx) {
 void
 init(void) {
   u32 i;
-  end_level_transition = 0;
-  begin_level_transition = 1;
-  begin_level_transition_wait = 0;
-  level_transition_timer = 0;
+  end_level.is_happening = 1;
+  end_level.fade_state = FADE_IN;
+  begin_level.is_happening = 0;
+  begin_level.fade_state = 0;
+  transition_timer = 0;
   current_level = 0;
-  palette[WHITE]      = colors[BLACK];
-  palette[LIGHT_GRAY] = colors[BLACK];
-  palette[DARK_GRAY]  = colors[BLACK];
-  palette[BLACK]      = colors[BLACK];
+  grow_level = 0;
+  for (i = 0; i < COLORS_AMOUNT; i++) palette[i] = colors[BLACK];
   for (i = 0; i < sizeof (levels) / sizeof (level); i++) {
     u32 j;
     u32 begin_txt_y;
@@ -679,6 +718,7 @@ void
 player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
     b8 shrink_level_x_min, b8 shrink_level_y_min, b8 shrink_level_x_max, b8 shrink_level_y_max) {
   if (condition) {
+    u32 i;
     player_y = player_ny;
     player_x = player_nx;
     player_walking = 0;
@@ -688,11 +728,36 @@ player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
     level_y_max = level_ny_max;
     if (key_collected) {
       if (player_x == door_x && player_y == door_y) {
-        end_level_transition = 1;
-        level_transition_timer = 0;
+        end_level.is_happening = 1;
+        transition_timer = 0;
       }
     } else if (player_x == key_x && player_y == key_y) {
       key_collected = 1;
+    }
+    for (i = 0; i < arrows_amount; i++) {
+      if (arrows[i].collected) continue;
+      if (player_x == arrows[i].x && player_y == arrows[i].y) {
+        arrows[i].collected = 1;
+        grow_level_dir = arrows[i].dir;
+        switch (arrows[i].dir) {
+          case D_UP:
+            level_ny_min = level_y_min - TILE_SIZE;
+            grow_level = 1;
+            break;
+          case D_LEFT:
+            level_nx_min = level_x_min - TILE_SIZE;
+            grow_level = 1;
+            break;
+          case D_RIGHT:
+            level_nx_max = level_x_max + TILE_SIZE;
+            grow_level = 1;
+            break;
+          case D_DOWN:
+            level_ny_max = level_y_max + TILE_SIZE;
+            grow_level = 1;
+            break;
+        }
+      }
     }
   } else {
     f32 delta_move = PLAYER_SPEED * dt;
@@ -705,87 +770,129 @@ player_move(b8 condition, f32 dt, s32 sign_x, s32 sign_y,
   }
 }
 
+b8
+fade_out(void) {
+  if (palette[WHITE] == colors[WHITE]) {
+    palette[WHITE]      = colors[LIGHT_GRAY];
+    palette[LIGHT_GRAY] = colors[DARK_GRAY];
+    palette[DARK_GRAY]  = colors[BLACK];
+  } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
+    palette[WHITE]      = colors[DARK_GRAY];
+    palette[LIGHT_GRAY] = colors[BLACK];
+  } else if (palette[WHITE] == colors[DARK_GRAY]) {
+    palette[WHITE]      = colors[BLACK];
+  } else if (palette[WHITE] == colors[BLACK]) {
+    return 1;
+  }
+  return 0;
+}
+
+b8
+fade_in(void) {
+  if (palette[WHITE] == colors[BLACK]) {
+    palette[WHITE]      = colors[DARK_GRAY];
+  } else if (palette[WHITE] == colors[DARK_GRAY]) {
+    palette[WHITE]      = colors[LIGHT_GRAY];
+    palette[LIGHT_GRAY] = colors[DARK_GRAY];
+  } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
+    palette[WHITE]      = colors[WHITE];
+    palette[LIGHT_GRAY] = colors[LIGHT_GRAY];
+    palette[DARK_GRAY]  = colors[DARK_GRAY];
+  } else if (palette[WHITE] == colors[WHITE]) {
+    return 1;
+  }
+  return 0;
+}
+
 void
 update(f32 dt) {
   /* level transitions */
-  if (begin_level_transition) {
-    if (begin_level_transition_wait) {
-      if (begin_level_trasition_blink_count == 0) {
-        if (key_click(K_START)) begin_level_trasition_blink_count = 1;
+  if (begin_level.is_happening) {
+    if (begin_level.fade_state == FADE_NONE) {
+      if (key_click(K_START)) begin_level.fade_state = FADE_OUT;
+    } else {
+      if (transition_timer < TRANSITION_SPEED) {
+        transition_timer += dt;
       } else {
-        if (level_transition_timer < 0.2f) {
-          level_transition_timer += dt;
-        } else {
-          level_transition_timer = 0;
-          if (begin_level_trasition_blink_count == 1) {
-            if (palette[WHITE] == colors[WHITE]) {
-              palette[WHITE]      = colors[LIGHT_GRAY];
-              palette[LIGHT_GRAY] = colors[DARK_GRAY];
-              palette[DARK_GRAY]  = colors[BLACK];
-            } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
-              palette[WHITE]      = colors[DARK_GRAY];
-              palette[LIGHT_GRAY] = colors[BLACK];
-            } else if (palette[WHITE] == colors[DARK_GRAY]) {
-              palette[WHITE]      = colors[BLACK];
-            } else if (palette[WHITE] == colors[BLACK]) {
-              begin_level_trasition_blink_count = 2;
+        transition_timer = 0;
+        switch (begin_level.fade_state) {
+          case FADE_OUT:
+            if (fade_out()) {
+              begin_level.fade_state = FADE_IN;
               load_level(current_level);
             }
-          } else {
-            if (palette[WHITE] == colors[BLACK]) {
-              palette[WHITE]      = colors[DARK_GRAY];
-            } else if (palette[WHITE] == colors[DARK_GRAY]) {
-              palette[WHITE]      = colors[LIGHT_GRAY];
-              palette[LIGHT_GRAY] = colors[DARK_GRAY];
-            } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
-              palette[WHITE]      = colors[WHITE];
-              palette[LIGHT_GRAY] = colors[LIGHT_GRAY];
-              palette[DARK_GRAY]  = colors[DARK_GRAY];
-            } else if (palette[WHITE] == colors[WHITE]) {
-              begin_level_trasition_blink_count = 0;
-              begin_level_transition = 0;
-              begin_level_transition_wait = 0;
+            break;
+          case FADE_IN:
+            if (fade_in()) {
+              begin_level.fade_state = FADE_NONE;
+              begin_level.is_happening = 0;
             }
-          }
+            break;
+          default: break;
         }
-      }
-    } else if (level_transition_timer < 0.2f) {
-      level_transition_timer += dt;
-    } else {
-      level_transition_timer = 0;
-      if (palette[WHITE] == colors[BLACK]) {
-        palette[WHITE]      = colors[DARK_GRAY];
-      } else if (palette[WHITE] == colors[DARK_GRAY]) {
-        palette[WHITE]      = colors[LIGHT_GRAY];
-        palette[LIGHT_GRAY] = colors[DARK_GRAY];
-      } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
-        palette[WHITE]      = colors[WHITE];
-        palette[LIGHT_GRAY] = colors[LIGHT_GRAY];
-        palette[DARK_GRAY]  = colors[DARK_GRAY];
-      } else if (palette[WHITE] == colors[WHITE]) {
-        begin_level_transition_wait = 1;
       }
     }
     return;
-  } else if (end_level_transition) {
-    if (level_transition_timer < 0.2f) {
-      level_transition_timer += dt;
+  } else if (end_level.is_happening) {
+    if (transition_timer < TRANSITION_SPEED) {
+      transition_timer += dt;
     } else {
-      level_transition_timer = 0;
-      if (palette[WHITE] == colors[WHITE]) {
-        palette[WHITE]      = colors[LIGHT_GRAY];
-        palette[LIGHT_GRAY] = colors[DARK_GRAY];
-        palette[DARK_GRAY]  = colors[BLACK];
-      } else if (palette[WHITE] == colors[LIGHT_GRAY]) {
-        palette[WHITE]      = colors[DARK_GRAY];
-        palette[LIGHT_GRAY] = colors[BLACK];
-      } else if (palette[WHITE] == colors[DARK_GRAY]) {
-        palette[WHITE]      = colors[BLACK];
-      } else if (palette[WHITE] == colors[BLACK]) {
-        end_level_transition = 0;
-        begin_level_transition = 1;
-        current_level++;
+      transition_timer = 0;
+      switch (end_level.fade_state) {
+        case FADE_OUT:
+          if (fade_out()) {
+            end_level.fade_state = FADE_IN;
+            current_level++;
+          }
+          break;
+        case FADE_IN:
+          if (fade_in()) {
+            end_level.is_happening = 0;
+            end_level.fade_state = FADE_OUT;
+            begin_level.is_happening = 1;
+          }
+          break;
+        default: break;
       }
+    }
+    return;
+  }
+  
+  /* update level */
+  if (grow_level) {
+    switch (grow_level_dir) {
+      case D_UP:
+        if (level_y_min < level_ny_min) {
+          level_y_min = level_ny_min;
+          grow_level = 0;
+        } else {
+          level_y_min -= PLAYER_SPEED * dt;
+        }
+        break;
+      case D_LEFT:
+        if (level_x_min < level_nx_min) {
+          level_x_min = level_nx_min;
+          grow_level = 0;
+        } else {
+          level_x_min -= PLAYER_SPEED * dt;
+        }
+        break;
+      case D_RIGHT:
+        if (level_x_max > level_nx_max) {
+          level_x_max = level_nx_max;
+          grow_level = 0;
+        } else {
+          level_x_max += PLAYER_SPEED * dt;
+        }
+        break;
+      case D_DOWN:
+        if (level_y_max > level_ny_max) {
+          level_y_max = level_ny_max;
+          grow_level = 0;
+        } else {
+          level_y_max += PLAYER_SPEED * dt;
+        }
+        break;
     }
     return;
   }
@@ -809,8 +916,9 @@ update(f32 dt) {
 
 void
 draw(void) {
-  if (begin_level_transition && begin_level_trasition_blink_count < 2) {
-    u32 i;
+  u32 i;
+  if ((end_level.is_happening   && end_level.fade_state   != FADE_OUT) ||
+      (begin_level.is_happening && begin_level.fade_state != FADE_IN)) {
     for (i = 0; i < levels_begin_txt_lines_amount[current_level]; i++) {
       draw_text(levels_begin_txt_x[current_level][i], levels_begin_txt_y[current_level][i], levels[current_level].begin_txt[i]);
     }
@@ -820,6 +928,9 @@ draw(void) {
   set_drawing_bounds(level_x_min, level_y_min, level_x_max, level_y_max);
   draw_tile(door_x, door_y, key_collected, 2);
   if (!key_collected) draw_tile(key_x, key_y, 0, 1);
+  for (i = 0; i < arrows_amount; i++) {
+    if (!arrows[i].collected) draw_tile(arrows[i].x, arrows[i].y, arrows[i].dir, 3);
+  }
   draw_tile(player_x, player_y, 0, 0);
   reset_drawing_bounds();
 }
